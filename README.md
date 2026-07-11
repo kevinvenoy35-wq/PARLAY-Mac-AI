@@ -1,17 +1,30 @@
-# Parlay Mac AI Football v1
 
-Upload these four files individually to the main page of your GitHub repository:
+# Parlay Mac AI — Phase 1 Starter
 
-- app.py
-- requirements.txt
-- README.md
-- bet_log.csv
+This is a simple Streamlit web app that includes:
 
-Do not upload the ZIP itself to Streamlit.
+- American odds to implied probability
+- No-vig probability
+- Expected value and ROI
+- Basic bet grading
+- Parlay hit-probability calculator
+- Manual bet tracker with CSV export
 
-Streamlit settings:
-- Repository: kevinvenoy35-wq/PARLAY-Mac-AI
-- Branch: main
-- Main file path: app.py
+## Run on Windows
 
-This tool does not guarantee winning bets.
+1. Install Python from python.org and check **Add Python to PATH**.
+2. Open the folder containing these files.
+3. Click the address bar in File Explorer, type `cmd`, and press Enter.
+4. Run:
+
+   pip install -r requirements.txt
+
+5. Then run:
+
+   streamlit run app.py
+
+Your browser should open automatically.
+
+## Important
+
+This prototype does not predict games by itself yet. It calculates from the probabilities and odds you enter. Automated NBA/WNBA statistics, injuries, line movement, and model predictions will be added in later phases.

@@ -1,227 +1,155 @@
+
 import math
 from datetime import date
-from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
-DATA_FILE = Path(__file__).parent / "bet_log.csv"
+st.set_page_config(page_title="Parlay Mac AI", page_icon="📊", layout="wide")
 
-st.set_page_config(page_title="Parlay Mac AI Football", page_icon="🏈", layout="wide")
-st.title("🏈 Parlay Mac AI Football")
-st.caption("NFL and college-football betting workspace: matchup grades, no-vig, EV, Kelly sizing, parlays, and tracking.")
+st.title("📊 Parlay Mac AI — Matchup & Bet Tracker")
+st.caption("Phase 1 prototype: manual odds entry, no-vig probability, EV, bet grading, and results tracking.")
 
-def implied_probability(odds):
-    return 100 / (odds + 100) if odds > 0 else abs(odds) / (abs(odds) + 100)
-
-def decimal_odds(odds):
+def american_to_decimal(odds: int) -> float:
+    if odds == 0:
+        return 1.0
     return 1 + (odds / 100 if odds > 0 else 100 / abs(odds))
 
-def profit(stake, odds):
+def implied_probability(odds: int) -> float:
+    if odds > 0:
+        return 100 / (odds + 100)
+    return abs(odds) / (abs(odds) + 100)
+
+def profit_for_stake(stake: float, odds: int) -> float:
     return stake * (odds / 100 if odds > 0 else 100 / abs(odds))
 
-def expected_value(stake, odds, probability):
-    return probability * profit(stake, odds) - (1 - probability) * stake
+def grade_edge(edge: float) -> str:
+    if edge >= 0.06:
+        return "Strong edge"
+    if edge >= 0.03:
+        return "Moderate edge"
+    if edge > 0:
+        return "Small edge"
+    return "No edge / Skip"
 
-def kelly_fraction(odds, probability):
-    b = decimal_odds(odds) - 1
-    return max(0.0, (b * probability - (1 - probability)) / b) if b > 0 else 0.0
+tab1, tab2, tab3 = st.tabs(["Matchup Analyzer", "Parlay Calculator", "Bet Tracker"])
 
-def load_bets():
-    columns = ["Date","League","Market","Pick","Odds","Stake","Result","Profit/Loss"]
-    if DATA_FILE.exists():
-        try:
-            return pd.read_csv(DATA_FILE)
-        except Exception:
-            pass
-    return pd.DataFrame(columns=columns)
+with tab1:
+    c1, c2 = st.columns(2)
+    with c1:
+        sport = st.selectbox("Sport", ["NBA", "WNBA", "NFL", "MLB", "NCAA Basketball", "NCAA Football"])
+        team_a = st.text_input("Team A", "Team A")
+        odds_a = st.number_input("Team A American odds", value=-110, step=5)
+        model_a = st.slider("Your estimated Team A win probability", 1, 99, 55) / 100
+    with c2:
+        market = st.selectbox("Market", ["Moneyline", "Spread", "Total", "Player Prop"])
+        team_b = st.text_input("Team B", "Team B")
+        odds_b = st.number_input("Team B American odds", value=-110, step=5)
+        model_b = st.slider("Your estimated Team B win probability", 1, 99, 45) / 100
 
-def save_bets(df):
-    df.to_csv(DATA_FILE, index=False)
+    imp_a = implied_probability(int(odds_a))
+    imp_b = implied_probability(int(odds_b))
+    total_imp = imp_a + imp_b
+    no_vig_a = imp_a / total_imp
+    no_vig_b = imp_b / total_imp
+    edge_a = model_a - imp_a
+    edge_b = model_b - imp_b
 
-page = st.sidebar.radio("Choose a tool", [
-    "Football Matchup Card",
-    "No-Vig + EV",
-    "Parlay Builder",
-    "Bet Tracker",
-    "Bankroll Plan",
-])
-st.sidebar.caption("This tool supports decisions. It cannot guarantee winners.")
+    st.subheader("Market comparison")
+    result = pd.DataFrame({
+        "Side": [team_a, team_b],
+        "Sportsbook implied %": [imp_a, imp_b],
+        "No-vig market %": [no_vig_a, no_vig_b],
+        "Your model %": [model_a, model_b],
+        "Edge": [edge_a, edge_b],
+        "Grade": [grade_edge(edge_a), grade_edge(edge_b)],
+    })
+    for col in ["Sportsbook implied %", "No-vig market %", "Your model %", "Edge"]:
+        result[col] = result[col].map(lambda x: f"{x:.1%}")
+    st.dataframe(result, use_container_width=True, hide_index=True)
 
-if page == "Football Matchup Card":
-    st.subheader("Football Matchup Card")
-    left, right = st.columns(2)
-    with left:
-        league = st.selectbox("League", ["NFL", "College Football"])
-        away = st.text_input("Away team", "Away Team")
-        away_line = st.number_input("Away spread", value=3.0, step=0.5)
-    with right:
-        week = st.text_input("Week / Date", "Week 1")
-        home = st.text_input("Home team", "Home Team")
-        home_line = st.number_input("Home spread", value=-3.0, step=0.5)
-
-    st.write("Rate each category from 1 to 10.")
-    factors = ["Quarterback","Offensive line","Defense","Coaching","Injuries","Recent form","Rest / travel"]
-    away_scores, home_scores = [], []
-    for factor in factors:
-        a, h = st.columns(2)
-        with a:
-            away_scores.append(st.slider(f"{away}: {factor}", 1, 10, 5, key="a_"+factor))
-        with h:
-            home_scores.append(st.slider(f"{home}: {factor}", 1, 10, 5, key="h_"+factor))
-
-    away_avg = sum(away_scores) / len(away_scores)
-    home_avg = sum(home_scores) / len(home_scores)
-    diff = away_avg - home_avg
-
-    c1, c2, c3 = st.columns(3)
-    c1.metric(f"{away} rating", f"{away_avg:.2f}/10")
-    c2.metric(f"{home} rating", f"{home_avg:.2f}/10")
-    c3.metric("Difference", f"{diff:+.2f}")
-
-    if abs(diff) < 0.35:
-        st.warning("Close matchup: PASS unless price, injuries, or line movement create a clear edge.")
-    elif diff > 0:
-        st.success(f"Your ratings lean {away} {away_line:+.1f}.")
-    else:
-        st.success(f"Your ratings lean {home} {home_line:+.1f}.")
-
-elif page == "No-Vig + EV":
-    st.subheader("No-Vig, EV, and Kelly Calculator")
-    a, b = st.columns(2)
-    with a:
-        side1 = st.text_input("Side 1", "Favorite")
-        odds1 = st.number_input("Side 1 odds", value=-125, step=5)
-    with b:
-        side2 = st.text_input("Side 2", "Underdog")
-        odds2 = st.number_input("Side 2 odds", value=105, step=5)
-
-    p1 = implied_probability(int(odds1))
-    p2 = implied_probability(int(odds2))
-    total = p1 + p2
-    novig1, novig2 = p1 / total, p2 / total
-
-    st.dataframe(pd.DataFrame({
-        "Side":[side1, side2],
-        "Book implied":[f"{p1:.2%}", f"{p2:.2%}"],
-        "No-vig probability":[f"{novig1:.2%}", f"{novig2:.2%}"],
-    }), use_container_width=True, hide_index=True)
-    st.metric("Book hold / vig", f"{total - 1:.2%}")
-
-    selected = st.radio("Evaluate", [side1, side2], horizontal=True)
-    chosen_odds = int(odds1 if selected == side1 else odds2)
-    true_prob = st.slider("Your estimated true probability", 1, 99, 55) / 100
     stake = st.number_input("Example stake", min_value=1.0, value=100.0, step=10.0)
-    bankroll = st.number_input("Bankroll", min_value=1.0, value=1000.0, step=100.0)
-
-    edge = true_prob - implied_probability(chosen_odds)
-    ev = expected_value(stake, chosen_odds, true_prob)
-    quarter_kelly = bankroll * kelly_fraction(chosen_odds, true_prob) * 0.25
-
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Edge", f"{edge:.2%}")
-    c2.metric("Expected value", f"${ev:,.2f}")
-    c3.metric("Quarter-Kelly size", f"${quarter_kelly:,.2f}")
-
-    if edge <= 0:
-        st.warning("PASS: your probability does not beat the sportsbook implied probability.")
+    selected = st.radio("Side to evaluate", [team_a, team_b], horizontal=True)
+    if selected == team_a:
+        chosen_odds, chosen_prob = int(odds_a), model_a
     else:
-        st.success("Positive edge based on your estimate.")
+        chosen_odds, chosen_prob = int(odds_b), model_b
 
-elif page == "Parlay Builder":
-    st.subheader("Parlay Builder")
-    legs = st.slider("Number of legs", 2, 8, 3)
-    probabilities, odds_list = [], []
+    possible_profit = profit_for_stake(stake, chosen_odds)
+    ev = chosen_prob * possible_profit - (1 - chosen_prob) * stake
+    roi = ev / stake
 
-    for i in range(legs):
-        c1, c2, c3 = st.columns([2,1,1])
-        with c1:
-            st.text_input(f"Leg {i+1}", f"Leg {i+1}", key=f"name{i}")
-        with c2:
-            odds_list.append(int(st.number_input("Odds", value=-110, step=5, key=f"odds{i}")))
-        with c3:
-            probabilities.append(st.slider("True %", 1, 99, 60, key=f"prob{i}") / 100)
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Potential profit", f"${possible_profit:,.2f}")
+    m2.metric("Expected value", f"${ev:,.2f}")
+    m3.metric("Expected ROI", f"{roi:.1%}")
 
-    hit_probability = math.prod(probabilities)
-    sportsbook_decimal = math.prod(decimal_odds(o) for o in odds_list)
-    sportsbook_american = (sportsbook_decimal - 1) * 100 if sportsbook_decimal >= 2 else -100 / (sportsbook_decimal - 1)
-    fair_decimal = 1 / hit_probability
+    if ev > 0:
+        st.success(f"{selected} shows positive expected value based on your probability estimate.")
+    else:
+        st.warning(f"{selected} does not show positive expected value. Consider skipping it.")
+
+with tab2:
+    st.subheader("Parlay probability calculator")
+    st.write("Enter each leg's estimated true probability. This assumes the legs are independent.")
+    num_legs = st.slider("Number of legs", 2, 8, 3)
+    probs = []
+    for i in range(num_legs):
+        p = st.slider(f"Leg {i+1} probability", 1, 99, 60, key=f"p{i}") / 100
+        probs.append(p)
+    combined = math.prod(probs)
+    fair_decimal = 1 / combined
     fair_american = (fair_decimal - 1) * 100 if fair_decimal >= 2 else -100 / (fair_decimal - 1)
+    st.metric("Estimated parlay hit probability", f"{combined:.2%}")
+    st.metric("Fair American odds", f"{fair_american:+.0f}")
+    st.caption("Correlated legs can make this estimate inaccurate. Avoid treating every leg as independent.")
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Estimated hit probability", f"{hit_probability:.2%}")
-    c2.metric("Sportsbook parlay odds", f"{sportsbook_american:+.0f}")
-    c3.metric("Fair odds", f"{fair_american:+.0f}")
+with tab3:
+    st.subheader("Bet tracker")
+    st.write("Use this table as a starter log. Export it to CSV after entering your bets.")
+    rows = st.number_input("Number of bets to enter", min_value=1, max_value=20, value=5)
+    data = []
+    for i in range(int(rows)):
+        cols = st.columns([1, 1.5, 1.5, 1, 1, 1])
+        with cols[0]:
+            d = st.date_input("Date", date.today(), key=f"d{i}", label_visibility="collapsed")
+        with cols[1]:
+            s = st.text_input("Sport", key=f"s{i}", placeholder="Sport", label_visibility="collapsed")
+        with cols[2]:
+            pick = st.text_input("Pick", key=f"pick{i}", placeholder="Pick", label_visibility="collapsed")
+        with cols[3]:
+            odds = st.number_input("Odds", value=-110, step=5, key=f"o{i}", label_visibility="collapsed")
+        with cols[4]:
+            wager = st.number_input("Stake", min_value=0.0, value=0.0, step=10.0, key=f"w{i}", label_visibility="collapsed")
+        with cols[5]:
+            outcome = st.selectbox("Result", ["Pending", "Win", "Loss", "Push"], key=f"r{i}", label_visibility="collapsed")
+        data.append([d, s, pick, odds, wager, outcome])
 
-    if legs > 4:
-        st.warning("Long parlays carry heavy variance. Keep the stake small.")
-    st.caption("This assumes the legs are independent.")
+    df = pd.DataFrame(data, columns=["Date", "Sport", "Pick", "Odds", "Stake", "Result"])
 
-elif page == "Bet Tracker":
-    st.subheader("Bet Tracker")
-    bets = load_bets()
+    def pnl(row):
+        if row["Result"] == "Win":
+            return profit_for_stake(row["Stake"], int(row["Odds"]))
+        if row["Result"] == "Loss":
+            return -row["Stake"]
+        return 0.0
 
-    with st.form("add_bet", clear_on_submit=True):
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            bet_date = st.date_input("Date", date.today())
-            league = st.selectbox("League", ["NFL","College Football","Other"])
-        with c2:
-            market = st.selectbox("Market", ["Spread","Moneyline","Total","Player Prop","Parlay","Other"])
-            pick = st.text_input("Pick")
-        with c3:
-            odds = st.number_input("American odds", value=-110, step=5)
-            stake = st.number_input("Stake", min_value=0.0, value=100.0, step=10.0)
-        result = st.selectbox("Result", ["Pending","Win","Loss","Push"])
-        submitted = st.form_submit_button("Add bet")
+    df["Profit/Loss"] = df.apply(pnl, axis=1)
+    st.dataframe(df, use_container_width=True, hide_index=True)
 
-    if submitted and pick.strip():
-        pnl = profit(stake, int(odds)) if result == "Win" else (-stake if result == "Loss" else 0.0)
-        new_row = pd.DataFrame([{
-            "Date":str(bet_date), "League":league, "Market":market, "Pick":pick.strip(),
-            "Odds":int(odds), "Stake":float(stake), "Result":result, "Profit/Loss":round(pnl,2)
-        }])
-        bets = pd.concat([bets, new_row], ignore_index=True)
-        save_bets(bets)
-        st.success("Bet added.")
+    total_staked = df["Stake"].sum()
+    total_pnl = df["Profit/Loss"].sum()
+    wins = (df["Result"] == "Win").sum()
+    losses = (df["Result"] == "Loss").sum()
+    settled = wins + losses
+    win_rate = wins / settled if settled else 0
+    tracker_roi = total_pnl / total_staked if total_staked else 0
 
-    if bets.empty:
-        st.info("No bets recorded yet.")
-    else:
-        st.dataframe(bets, use_container_width=True, hide_index=True)
-        settled = bets[bets["Result"].isin(["Win","Loss"])]
-        wins = int((settled["Result"] == "Win").sum())
-        losses = int((settled["Result"] == "Loss").sum())
-        total_stake = pd.to_numeric(bets["Stake"], errors="coerce").fillna(0).sum()
-        total_pnl = pd.to_numeric(bets["Profit/Loss"], errors="coerce").fillna(0).sum()
-        win_rate = wins / (wins + losses) if wins + losses else 0
-        roi = total_pnl / total_stake if total_stake else 0
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Record", f"{wins}-{losses}")
+    k2.metric("Win rate", f"{win_rate:.1%}")
+    k3.metric("Profit/Loss", f"${total_pnl:,.2f}")
+    k4.metric("ROI", f"{tracker_roi:.1%}")
 
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Record", f"{wins}-{losses}")
-        c2.metric("Win rate", f"{win_rate:.1%}")
-        c3.metric("Profit/Loss", f"${total_pnl:,.2f}")
-        c4.metric("ROI", f"{roi:.1%}")
-
-        st.download_button("Download bet log", bets.to_csv(index=False).encode("utf-8"),
-                           "parlay_mac_bet_log.csv", "text/csv")
-
-elif page == "Bankroll Plan":
-    st.subheader("Bankroll Plan")
-    bankroll = st.number_input("Starting bankroll", min_value=1.0, value=1000.0, step=100.0)
-    unit_percent = st.slider("Standard unit percentage", 0.5, 3.0, 1.0, 0.25) / 100
-    unit = bankroll * unit_percent
-
-    c1, c2, c3 = st.columns(3)
-    c1.metric("0.5 unit", f"${unit * 0.5:,.2f}")
-    c2.metric("1 unit", f"${unit:,.2f}")
-    c3.metric("2 units", f"${unit * 2:,.2f}")
-
-    st.markdown('''
-- Standard play: 1 unit
-- Small lean: 0.5 unit
-- Strongest qualified edge: up to 2 units
-- Do not chase losses
-- Keep long parlays small
-- Track closing line value, not only wins and losses
-''')
+    csv = df.to_csv(index=False).encode("utf-8")
+    st.download_button("Download bet log CSV", csv, "parlay_mac_bet_log.csv", "text/csv")
