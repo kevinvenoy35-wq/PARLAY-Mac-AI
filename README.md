@@ -1,30 +1,24 @@
+# Parlay Mac AI Phase 2
 
-# Parlay Mac AI — Phase 1 Starter
+Phase 2 includes:
 
-This is a simple Streamlit web app that includes:
+- Automatic NFL weekly schedule
+- Best Bets Board
+- Matchup projections
+- Confidence scores
+- BET / LEAN / PASS decisions
+- Optional live NFL odds connection
+- No-vig, EV, and Kelly sizing
+- Parlay calculator
+- Bet tracker
+- Bankroll guide
 
-- American odds to implied probability
-- No-vig probability
-- Expected value and ROI
-- Basic bet grading
-- Parlay hit-probability calculator
-- Manual bet tracker with CSV export
+Upload these three replacement files to GitHub:
 
-## Run on Windows
+- app.py
+- requirements.txt
+- README.md
 
-1. Install Python from python.org and check **Add Python to PATH**.
-2. Open the folder containing these files.
-3. Click the address bar in File Explorer, type `cmd`, and press Enter.
-4. Run:
+Leave your existing bet_log.csv in the repository.
 
-   pip install -r requirements.txt
-
-5. Then run:
-
-   streamlit run app.py
-
-Your browser should open automatically.
-
-## Important
-
-This prototype does not predict games by itself yet. It calculates from the probabilities and odds you enter. Automated NBA/WNBA statistics, injuries, line movement, and model predictions will be added in later phases.
+Streamlit should update automatically after the GitHub commit.
